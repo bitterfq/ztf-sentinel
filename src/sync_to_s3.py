@@ -16,10 +16,9 @@ from botocore.exceptions import NoCredentialsError, ClientError
 from pathlib import Path
 from datetime import datetime
 from dotenv import load_dotenv
-
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 load_dotenv('/opt/airflow/.env')
-
 
 # === CONFIG ===
 BUCKET_NAME = 'ztf-pipeline-data'
@@ -28,6 +27,7 @@ LOCAL_DIRECTORIES = [
     ('/opt/airflow/images/by_date', 'images/by_date')
 ]
 LOG_FILE = '/opt/airflow/custom_logs/sync_to_s3.log'
+MAX_WORKERS = 12  # Adjust based on Pi memory and CPU usage
 
 # === SETUP LOGGING ===
 os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
@@ -60,22 +60,35 @@ def s3_etag_matches(local_path, bucket, key):
         else:
             raise
 
+def upload_file_if_needed(file_path, s3_prefix, local_dir):
+    file_path = Path(file_path)
+    s3_key = os.path.join(s3_prefix, file_path.relative_to(local_dir).as_posix())
+    try:
+        if s3_etag_matches(file_path, BUCKET_NAME, s3_key):
+            return None  # Skipped
+        s3.upload_file(str(file_path), BUCKET_NAME, s3_key)
+        return f"✅ Uploaded: {file_path} -> s3://{BUCKET_NAME}/{s3_key}"
+    except NoCredentialsError:
+        return "❌ AWS credentials not found."
+    except Exception as e:
+        return f"❌ Failed to upload {file_path}: {e}"
+
 def upload_directory(local_dir, s3_prefix):
     local_dir = Path(local_dir)
-    for file_path in local_dir.rglob('*'):
-        if file_path.is_file():
-            s3_key = os.path.join(s3_prefix, file_path.relative_to(local_dir).as_posix())
-            if s3_etag_matches(file_path, BUCKET_NAME, s3_key):
-                #logging.info(f"⏭️ Skipped (unchanged): {file_path}")
-                continue
-            try:
-                s3.upload_file(str(file_path), BUCKET_NAME, s3_key)
-                logging.info(f"✅ Uploaded: {file_path} -> s3://{BUCKET_NAME}/{s3_key}")
-            except NoCredentialsError:
-                logging.error("❌ AWS credentials not found.")
-                return
-            except Exception as e:
-                logging.error(f"❌ Failed to upload {file_path}: {e}")
+    files = [f for f in local_dir.rglob('*') if f.is_file()]
+    total = len(files)
+    if total == 0:
+        logging.info(f"📁 No files to upload in {local_dir}")
+        return
+
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+        futures = [executor.submit(upload_file_if_needed, f, s3_prefix, local_dir) for f in files]
+        for i, future in enumerate(as_completed(futures), 1):
+            result = future.result()
+            if result:
+                logging.info(result)
+            if i % 100 == 0:
+                logging.info(f"🧮 Processed {i}/{total} files...")
 
 def main():
     logging.info("=" * 60)
@@ -89,5 +102,6 @@ def main():
     logging.info("✅ Sync cycle complete")
     logging.info("=" * 60)
     logging.info("\n")
+
 if __name__ == "__main__":
     main()

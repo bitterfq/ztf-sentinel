@@ -1,0 +1,92 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:13
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - postgres-db-volume:/var/lib/postgresql/data
+    networks:
+      - airflow
+
+  airflow-init:
+    image: apache/airflow:2.8.1
+    entrypoint: /bin/bash
+    command: -c "airflow db init"
+    environment:
+      PYTHONPATH: /opt/airflow/src
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./logs:/opt/airflow/logs                  # Airflow logs stay inside airflow/
+      - ../logs:/opt/airflow/custom_logs
+      - ./plugins:/opt/airflow/plugins
+      - ../src:/opt/airflow/src
+      - ../data:/opt/airflow/data
+      - ../images:/opt/airflow/images
+      - ../.env:/opt/airflow/.env  # <-- added
+      - ../dbt:/opt/airflow/dbt
+    networks:
+      - airflow
+    depends_on:
+      - postgres
+
+  airflow-webserver:
+    image: apache/airflow:2.8.1
+    command: webserver
+    ports:
+      - "8080:8080"
+    environment:
+      PYTHONPATH: /opt/airflow/src
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+      AIRFLOW__WEBSERVER__DEFAULT_USER_USERNAME: admin
+      AIRFLOW__WEBSERVER__DEFAULT_USER_PASSWORD: admin
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./logs:/opt/airflow/logs                  # Airflow logs stay inside airflow/
+      - ../logs:/opt/airflow/custom_logs
+      - ./plugins:/opt/airflow/plugins
+      - ../src:/opt/airflow/src
+      - ../data:/opt/airflow/data
+      - ../images:/opt/airflow/images
+      - ../.env:/opt/airflow/.env  # <-- added
+      - ../dbt:/opt/airflow/dbt
+    networks:
+      - airflow
+    depends_on:
+      - postgres
+      - airflow-init
+
+  airflow-scheduler:
+    image: apache/airflow:2.8.1
+    command: scheduler
+    environment:
+      PYTHONPATH: /opt/airflow/src
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./logs:/opt/airflow/logs                  # Airflow logs stay inside airflow/
+      - ../logs:/opt/airflow/custom_logs
+      - ./plugins:/opt/airflow/plugins
+      - ../src:/opt/airflow/src
+      - ../data:/opt/airflow/data
+      - ../images:/opt/airflow/images
+      - ../.env:/opt/airflow/.env  # <-- added
+      - ../dbt:/opt/airflow/dbt
+    networks:
+      - airflow
+    depends_on:
+      - postgres
+      - airflow-init
+
+volumes:
+  postgres-db-volume:
+
+networks:
+  airflow:
