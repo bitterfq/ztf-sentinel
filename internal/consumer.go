@@ -1,48 +1,49 @@
 package internal
 
 import (
+	"fmt"
 	"os"
+	"time"
 
 	"github.com/confluentinc/confluent-kafka-go/kafka"
 )
 
-type lasairConsumer struct {
+type LasairConsumer struct {
 	kafkaConsumer *kafka.Consumer
 }
 
 type ZTFSentinel struct {
-	eventLog       string
-	errorLog       string
-	lasairConsumer *lasairConsumer
+	eventLog       *os.File
+	errorLog       *os.File
+	LasairConsumer *LasairConsumer
 }
 
-func NewZTFSentinel(evntLog string, errLog string, consumer *lasairConsumer) (*ZTFSentinel, error) {
+func NewZTFSentinel(evntLog string, errLog string, consumer *LasairConsumer) (*ZTFSentinel, error) {
 
 	sentinel := ZTFSentinel{
-		eventLog:       evntLog,
-		errorLog:       errLog,
-		lasairConsumer: consumer,
+		eventLog:       nil,
+		errorLog:       nil,
+		LasairConsumer: consumer,
 	}
 
 	// open event & err logs
-	errFile, err := os.Open(sentinel.errorLog)
+	var err error
+
+	sentinel.errorLog, err = os.OpenFile(errLog, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		panic(err)
+		return nil, fmt.Errorf("FAILED TO OPEN ERROR LOG FILE: %w", err)
 	}
-	evntFile, err := os.Open(sentinel.eventLog)
+	sentinel.eventLog, err = os.OpenFile(evntLog, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		errFile.WriteString("Error opening event log....")
-		panic(err)
+		return nil, fmt.Errorf("FAILED TO OPEN EVENT LOG FIL: %w", err)
 	}
 
-	defer evntFile.Close()
-	defer errFile.Close()
+	sentinel.eventLog.WriteString("🪐 Initializing ZTF Sentinel....\n")
 
-	evntFile.WriteString("Initializing ZTF Sentinel....")
-
+	return &sentinel, nil
 }
 
-func NewLasairConsumer(host, groupId, topic string) (*lasairConsumer, error) {
+func NewLasairConsumer(host, groupId, topic string) (*LasairConsumer, error) {
 
 	c, err := kafka.NewConsumer(&kafka.ConfigMap{
 		"bootstrap.servers": host,
@@ -50,31 +51,63 @@ func NewLasairConsumer(host, groupId, topic string) (*lasairConsumer, error) {
 	})
 
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("Failed to Initialize Kafka Consumer: %w", err)
 	}
 
 	err = c.Subscribe(topic, nil)
-
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("Failed to Subscribe to Kafka topic: %w", err)
 	}
 
-	return &lasairConsumer{
+	return &LasairConsumer{
 		kafkaConsumer: c,
 	}, err
 }
 
-func (lc *lasairConsumer) Poll(timeoutMs int) kafka.Event {
+func (lc *LasairConsumer) Poll(timeoutMs int) kafka.Event {
 	event := lc.kafkaConsumer.Poll(timeoutMs)
 	return event
 }
 
-func (lc *lasairConsumer) Close() error {
-	err := lc.kafkaConsumer.Close()
+func (lc *LasairConsumer) Close() error {
+	return lc.kafkaConsumer.Close()
+}
 
+func (sentinel *ZTFSentinel) CloseFiles() error {
+	err := sentinel.eventLog.Close()
 	if err != nil {
-		return err
+		panic(err)
+	}
+	err = sentinel.errorLog.Close()
+	if err != nil {
+		panic(err)
 	}
 
 	return nil
+}
+
+func (sentinel *ZTFSentinel) Run() {
+
+	for {
+		// TODO: add flag to pass in user defined timeout args
+		msg := sentinel.LasairConsumer.Poll(3600)
+		now := time.Now().UTC().Format(time.RFC3339)
+
+		switch e := msg.(type) {
+		case kafka.Error:
+			fmt.Fprintf(sentinel.errorLog, "[%s] %s\n", now, msg.String())
+
+		case *kafka.Message:
+			alert := e.Value
+			fmt.Fprintf(sentinel.eventLog, "[%s] %s\n", now, string(e.Value))
+			fmt.Println(alert)
+
+		case nil:
+			message := fmt.Sprintf("[%s] Poll timeout - no new messages\n", now)
+			sentinel.eventLog.WriteString(message)
+
+		}
+
+	}
+
 }
