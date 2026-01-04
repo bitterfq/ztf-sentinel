@@ -103,9 +103,7 @@ func (sentinel *ZTFSentinel) Run() {
 			fmt.Println(alert)
 
 		case nil:
-			message := fmt.Sprintf("[%s] Poll timeout - no new messages\n", now)
-			sentinel.eventLog.WriteString(message)
-
+			continue
 		}
 
 	}
