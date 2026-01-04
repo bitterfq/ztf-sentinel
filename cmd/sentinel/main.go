@@ -2,15 +2,23 @@ package main
 
 import (
 	"log"
+	"os"
 
 	"github.com/bitterfq/ztf-sentinel/internal"
+	"github.com/joho/godotenv"
 )
 
 func main() {
+
+	err := godotenv.Load()
+	if err != nil {
+		log.Fatal("Error loading .env file")
+	}
+
 	consumer, err := internal.NewLasairConsumer(
-		"kafka.lsst.ac.uk:9092",
-		"initialTest1",
-		"lasair_1568BrightFastTransients",
+		os.Getenv("HOST"),
+		os.Getenv("GROUP_ID"),
+		os.Getenv("TOPIC"),
 	)
 
 	if err != nil {
