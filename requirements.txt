@@ -1,7 +1,0 @@
-lasair
-astropy
-requests
-alerce
-matplotlib
-boto3
-schedule
