@@ -54,6 +54,7 @@ func NewLasairConsumer(host, groupId, topic string) (*LasairConsumer, error) {
 	c, err := kafka.NewConsumer(&kafka.ConfigMap{
 		"bootstrap.servers": host,
 		"group.id":          groupId,
+		"auto.offset.reset": "earliest",
 	})
 
 	if err != nil {
@@ -102,7 +103,7 @@ func (sentinel *ZTFSentinel) Run() {
 
 		switch e := msg.(type) {
 		case kafka.Error:
-			fmt.Fprintf(sentinel.errorLog, "[%s] %s\n", now, msg.String())
+			fmt.Fprintf(sentinel.errorLog, "[%s] KAFKA_ERR: %v\n", now, e)
 
 		case *kafka.Message:
 
@@ -112,7 +113,8 @@ func (sentinel *ZTFSentinel) Run() {
 			// unmarshall data into domain type
 			err := json.Unmarshal(e.Value, &alert)
 			if err != nil {
-				fmt.Fprintf(sentinel.errorLog, "[%s] %s\n", now, msg.String())
+				fmt.Fprintf(sentinel.errorLog, "[%s] UNMARSHAL_ERR: %v | %s\n", now, err, msg.String())
+				continue
 			}
 
 			// for all that is not in the data packet, populate our alert type with
@@ -121,7 +123,7 @@ func (sentinel *ZTFSentinel) Run() {
 
 			err = sentinel.repo.Save(ctx, alert)
 			if err != nil {
-				fmt.Fprintf(sentinel.errorLog, "[%s] %s\n", now, msg.String())
+				fmt.Fprintf(sentinel.errorLog, "[%s] SAVE_ERR: %v | %s\n", now, err, msg.String())
 			}
 
 		case nil:
