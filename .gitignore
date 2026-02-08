@@ -8,3 +8,5 @@ dbt/ztf_dbt/dbt_modules/
 
 ~/.dbt/
 .env
+.venv
+*.csv

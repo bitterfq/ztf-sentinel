@@ -76,3 +76,39 @@ func dbToDomain(a db.Alert) domains.Alert {
 		ReceivedAt:               a.ReceivedAt.Time,
 	}
 }
+
+func (p *PostgresRepo) SaveImage(ctx context.Context, image domains.Image) error {
+	params := imageDomainToDBParams(image)
+	return p.queries.CreateImage(ctx, params)
+}
+
+func (p *PostgresRepo) GetByAlertID(ctx context.Context, alertID string) ([]domains.Image, error) {
+	dbImages, err := p.queries.GetImagesByAlertID(ctx, sql.NullString{String: alertID, Valid: true})
+	if err != nil {
+		return nil, err
+	}
+
+	images := make([]domains.Image, len(dbImages))
+	for i, img := range dbImages {
+		images[i] = dbImageToDomain(img)
+	}
+	return images, nil
+}
+
+func imageDomainToDBParams(img domains.Image) db.CreateImageParams {
+	return db.CreateImageParams{
+		AlertID:   sql.NullString{String: img.AlertID, Valid: true},
+		ImageType: sql.NullString{String: img.ImageType, Valid: true},
+		FilePath:  img.FilePath,
+	}
+}
+
+func dbImageToDomain(img db.Image) domains.Image {
+	return domains.Image{
+		ID:        int(img.ID),
+		AlertID:   img.AlertID.String,
+		ImageType: img.ImageType.String,
+		FilePath:  img.FilePath,
+		CreatedAt: img.CreatedAt.Time,
+	}
+}

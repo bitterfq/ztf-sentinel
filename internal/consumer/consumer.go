@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/bitterfq/ztf-sentinel/internal/domains"
+	imagefetcher "github.com/bitterfq/ztf-sentinel/internal/image_fetcher"
 	"github.com/bitterfq/ztf-sentinel/internal/repository"
 	"github.com/confluentinc/confluent-kafka-go/kafka"
 )
@@ -21,15 +22,17 @@ type ZTFSentinel struct {
 	errorLog       *os.File
 	LasairConsumer *LasairConsumer
 	repo           repository.AlertRepository
+	ImageFetcher   *imagefetcher.ImageFetcher
 }
 
-func NewZTFSentinel(evntLog string, errLog string, consumer *LasairConsumer, repo repository.AlertRepository) (*ZTFSentinel, error) {
+func NewZTFSentinel(evntLog string, errLog string, consumer *LasairConsumer, repo repository.AlertRepository, imgFetcher *imagefetcher.ImageFetcher) (*ZTFSentinel, error) {
 
 	sentinel := ZTFSentinel{
 		eventLog:       nil,
 		errorLog:       nil,
 		LasairConsumer: consumer,
 		repo:           repo,
+		ImageFetcher:   imgFetcher,
 	}
 
 	// open event & err logs
@@ -106,7 +109,7 @@ func (sentinel *ZTFSentinel) Run() {
 			fmt.Fprintf(sentinel.errorLog, "[%s] KAFKA_ERR: %v\n", now, e)
 
 		case *kafka.Message:
-
+			fmt.Fprintf(sentinel.eventLog, "[%s] RAW_ALERT: %s\n", now, string(e.Value))
 			// create domain type
 			var alert domains.Alert
 
@@ -124,7 +127,13 @@ func (sentinel *ZTFSentinel) Run() {
 			err = sentinel.repo.Save(ctx, alert)
 			if err != nil {
 				fmt.Fprintf(sentinel.errorLog, "[%s] SAVE_ERR: %v | %s\n", now, err, msg.String())
+				continue
 			}
+
+			sentinel.ImageFetcher.Enqueue(imagefetcher.Job{
+				AlertID:  alert.ID,
+				ObjectID: alert.ObjectID,
+			})
 
 		case nil:
 			continue

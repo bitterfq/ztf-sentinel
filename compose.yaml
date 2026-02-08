@@ -40,13 +40,26 @@ services:
         postgres:
           condition: service_healthy
   
+  imageutil:
+    build:
+      context: .
+      dockerfile: Dockerfile.sidecar
+    ports:
+      - "8000:8000"
+    volumes:
+      - stamps:/app/stamps
+
   sentinel:
     build: .
-    depends_on: 
+    depends_on:
       - migrate
       - postgres
+      - imageutil
     env_file:
       - .env
+    volumes:
+      - stamps:/app/stamps
 
 volumes:
   postgres_data:
+  stamps:

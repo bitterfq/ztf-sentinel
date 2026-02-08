@@ -7,6 +7,7 @@ import (
 
 	"github.com/bitterfq/ztf-sentinel/internal/consumer"
 	"github.com/bitterfq/ztf-sentinel/internal/database/db"
+	imagefetcher "github.com/bitterfq/ztf-sentinel/internal/image_fetcher"
 	"github.com/bitterfq/ztf-sentinel/internal/repository"
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
@@ -31,16 +32,27 @@ func main() {
 		log.Fatal(err)
 	}
 
+	repo := repository.NewPostgresRepo(queries)
+
+	imgFetcher := imagefetcher.NewImageFetcher(
+		5,
+		"http://imageutil:8000",
+		50,
+		repo,
+	)
+
 	sentinel, err := consumer.NewZTFSentinel(
 		"logs/event.log",
 		"logs/error.log",
 		kafkaConsumer,
-		repository.NewPostgresRepo(queries),
+		repo,
+		imgFetcher,
 	)
 
 	if err != nil {
 		log.Fatal(err)
 	}
 
+	imgFetcher.Start()
 	sentinel.Run()
 }
